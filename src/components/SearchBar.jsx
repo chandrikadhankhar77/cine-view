@@ -16,9 +16,9 @@ export default function SearchBar({ value, onChange, onSubmit }) {
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Search movies by title..."
+          placeholder="Search TMDB by movie title..."
           className="flex-1 bg-transparent px-3 py-3.5 text-white text-sm placeholder:text-cine-muted outline-none"
-          aria-label="Search movies by title"
+          aria-label="Search movies by title on TMDB"
         />
         <button
           type="submit"

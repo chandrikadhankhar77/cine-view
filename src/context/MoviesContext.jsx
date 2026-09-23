@@ -17,10 +17,12 @@ import {
 import {
   fetchPopularMovies,
   fetchMovieDetails,
+  searchMovies,
   hasApiKey,
 } from '../services/movieService';
 
 const RATINGS_STORAGE_KEY = 'cineview_user_ratings';
+const SEARCH_DEBOUNCE_MS = 400;
 const MoviesContext = createContext(null);
 
 function loadRatings() {
@@ -45,8 +47,13 @@ function sameMovieId(a, b) {
 }
 
 export function MoviesProvider({ children }) {
+  /** Movies currently shown in the grid (popular list or API search results). */
   const [movies, setMovies] = useState([]);
+  /** Cached popular list so clearing search restores Discover without refetch. */
+  const popularRef = useRef([]);
+
   const [loading, setLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dataSource, setDataSource] = useState('loading'); // 'tmdb' | 'fallback'
 
@@ -58,6 +65,7 @@ export function MoviesProvider({ children }) {
   const [currentPage, setCurrentPage] = useState(1);
 
   const detailCacheRef = useRef({});
+  const searchRequestIdRef = useRef(0);
 
   const MOVIES_PER_PAGE = 12;
 
@@ -66,6 +74,7 @@ export function MoviesProvider({ children }) {
     setError(null);
 
     if (!hasApiKey()) {
+      popularRef.current = moviesFallback;
       setMovies(moviesFallback);
       setDataSource('fallback');
       setError(
@@ -77,11 +86,13 @@ export function MoviesProvider({ children }) {
 
     try {
       const popular = await fetchPopularMovies(3);
+      popularRef.current = popular;
       setMovies(popular);
       setDataSource('tmdb');
       setError(null);
     } catch (err) {
       console.error('TMDB fetch failed, using local fallback:', err);
+      popularRef.current = moviesFallback;
       setMovies(moviesFallback);
       setDataSource('fallback');
       setError(
@@ -106,19 +117,66 @@ export function MoviesProvider({ children }) {
     setCurrentPage(1);
   }, [searchQuery, selectedGenre, selectedYear, selectedRating]);
 
+  /**
+   * Live TMDB title search when credentials are present.
+   * Debounced so we do not hit the API on every keystroke.
+   * Fallback mode keeps client-side filtering only.
+   */
+  useEffect(() => {
+    if (dataSource !== 'tmdb' || !hasApiKey()) {
+      return undefined;
+    }
+
+    const trimmed = searchQuery.trim();
+    const requestId = ++searchRequestIdRef.current;
+
+    if (!trimmed) {
+      setSearchLoading(false);
+      setMovies(popularRef.current);
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const results = await searchMovies(trimmed);
+        if (searchRequestIdRef.current !== requestId) return;
+        setMovies(results);
+      } catch (err) {
+        if (searchRequestIdRef.current !== requestId) return;
+        console.error('TMDB search failed:', err);
+        setError(
+          err?.message
+            ? `Search failed (${err.message}). Showing previous results.`
+            : 'Search failed. Showing previous results.'
+        );
+      } finally {
+        if (searchRequestIdRef.current === requestId) {
+          setSearchLoading(false);
+        }
+      }
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchQuery, dataSource]);
+
   const genres = useMemo(() => getUniqueGenres(movies), [movies]);
   const years = useMemo(() => getUniqueYears(movies), [movies]);
   const ratingOptions = useMemo(() => getRatingOptions(), []);
 
+  // When TMDB search is active, title matching is done by the API —
+  // only apply genre / year / rating filters client-side.
   const filteredMovies = useMemo(
     () =>
       applyAllFilters(movies, {
-        searchQuery,
+        searchQuery: dataSource === 'tmdb' ? '' : searchQuery,
         genre: selectedGenre,
         year: selectedYear,
         rating: selectedRating,
       }),
-    [movies, searchQuery, selectedGenre, selectedYear, selectedRating]
+    [movies, searchQuery, selectedGenre, selectedYear, selectedRating, dataSource]
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredMovies.length / MOVIES_PER_PAGE));
@@ -154,7 +212,11 @@ export function MoviesProvider({ children }) {
   );
 
   const getMovieById = useCallback(
-    (id) => movies.find((m) => sameMovieId(m.id, id)),
+    (id) => {
+      const fromCatalog = movies.find((m) => sameMovieId(m.id, id));
+      if (fromCatalog) return fromCatalog;
+      return popularRef.current.find((m) => sameMovieId(m.id, id));
+    },
     [movies]
   );
 
@@ -218,6 +280,7 @@ export function MoviesProvider({ children }) {
     getMovieById,
     loadMovieDetails,
     loading,
+    searchLoading,
     error,
     dataSource,
     reloadMovies: loadMovies,

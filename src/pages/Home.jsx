@@ -29,10 +29,14 @@ export default function Home() {
     setCurrentPage,
     totalPages,
     loading,
+    searchLoading,
     error,
     dataSource,
     reloadMovies,
   } = useMovies();
+
+  const showInitialLoading = loading;
+  const showSearchLoading = !loading && searchLoading;
 
   return (
     <div className="min-h-screen bg-cine-black">
@@ -47,7 +51,7 @@ export default function Home() {
       {/* Browse Section */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Data source banner */}
-        {!loading && (
+        {!showInitialLoading && (
           <div
             className={`flex flex-wrap items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
               dataSource === 'tmdb'
@@ -63,7 +67,9 @@ export default function Home() {
             <div className="flex-1 min-w-0">
               <p className="font-medium">
                 {dataSource === 'tmdb'
-                  ? 'Live data from The Movie Database (TMDB) API'
+                  ? searchQuery.trim()
+                    ? `Searching TMDB for “${searchQuery.trim()}”`
+                    : 'Live data from The Movie Database (TMDB) API'
                   : 'Using local sample data (movies.json)'}
               </p>
               {error && (
@@ -86,7 +92,7 @@ export default function Home() {
         )}
 
         {/* Filter Bar */}
-        {!loading && (
+        {!showInitialLoading && (
           <FilterBar
             totalCount={filteredMovies.length}
             genres={genres}
@@ -104,11 +110,17 @@ export default function Home() {
         )}
 
         {/* Loading / Grid / Empty */}
-        {loading ? (
+        {showInitialLoading || showSearchLoading ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <Loader2 size={36} className="animate-spin text-cine-amber mb-4" />
-            <p className="text-white font-medium">Loading movies…</p>
-            <p className="text-cine-subtle text-sm mt-1">Fetching from TMDB API</p>
+            <p className="text-white font-medium">
+              {showSearchLoading ? 'Searching movies…' : 'Loading movies…'}
+            </p>
+            <p className="text-cine-subtle text-sm mt-1">
+              {showSearchLoading
+                ? 'Querying TMDB search API'
+                : 'Fetching from TMDB API'}
+            </p>
           </div>
         ) : paginatedMovies.length > 0 ? (
           <>
