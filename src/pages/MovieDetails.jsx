@@ -9,6 +9,7 @@ import {
   Clapperboard,
   Play,
   MessageSquare,
+  Loader2,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -19,9 +20,11 @@ import { useMovies } from '../hooks/useMovies';
 
 export default function MovieDetails() {
   const { id } = useParams();
-  const { getMovieById, getUserRating, rateMovie } = useMovies();
-  const movie = getMovieById(id);
-  const userRating = getUserRating(Number(id));
+  const { getUserRating, rateMovie, loadMovieDetails, loading: listLoading } = useMovies();
+  const userRating = getUserRating(id);
+  const [movie, setMovie] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [detailError, setDetailError] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -30,13 +33,58 @@ export default function MovieDetails() {
     window.scrollTo(0, 0);
   }, [id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setDetailLoading(true);
+      setDetailError(null);
+      setImgError(false);
+
+      const result = await loadMovieDetails(id);
+      if (cancelled) return;
+
+      setMovie(result.movie);
+      if (!result.movie) {
+        setDetailError(result.error || 'Movie not found');
+      } else if (result.error) {
+        setDetailError(result.error);
+      }
+      setDetailLoading(false);
+    }
+
+    if (!listLoading) {
+      load();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, loadMovieDetails, listLoading]);
+
+  if (listLoading || detailLoading) {
+    return (
+      <div className="min-h-screen bg-cine-black">
+        <Navbar />
+        <div className="flex flex-col items-center justify-center py-32 text-center">
+          <Loader2 size={36} className="animate-spin text-cine-amber mb-4" />
+          <p className="text-white font-medium">Loading movie details…</p>
+          <p className="text-cine-subtle text-sm mt-1">Fetching from TMDB API</p>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   if (!movie) {
     return (
       <div className="min-h-screen bg-cine-black">
         <Navbar />
         <div className="flex flex-col items-center justify-center py-32 text-center">
           <h2 className="text-2xl font-bold text-white mb-3">Movie not found</h2>
-          <p className="text-cine-subtle mb-6">The movie you're looking for doesn't exist.</p>
+          <p className="text-cine-subtle mb-6">
+            {detailError || "The movie you're looking for doesn't exist."}
+          </p>
           <Link
             to="/"
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-cine-amber text-cine-dark font-semibold rounded-lg hover:bg-cine-amber-hover transition-colors"
